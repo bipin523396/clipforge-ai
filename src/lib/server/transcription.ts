@@ -38,9 +38,11 @@ export async function transcribeMedia(
   return generateBaselineSegments();
 }
 
+import { getPythonPath } from './media-probe';
+
 async function getYouTubeTranscript(videoUrl: string, language: string): Promise<TranscriptSegment[]> {
   return new Promise((resolve, reject) => {
-    const python = '/opt/anaconda3/bin/python3';
+    const python = getPythonPath();
     // Small python helper to extract transcript as JSON
     const script = `
 import sys, json
@@ -121,6 +123,11 @@ except Exception as e:
     let stdout = '';
     let stderr = '';
 
+    const timer = setTimeout(() => {
+      try { proc.kill('SIGKILL'); } catch {}
+      reject(new Error('YouTube transcript fetch timed out'));
+    }, 15000);
+
     proc.stdout.on('data', (d) => {
       stdout += d.toString();
     });
@@ -129,7 +136,13 @@ except Exception as e:
       stderr += d.toString();
     });
 
+    proc.on('error', (err) => {
+      clearTimeout(timer);
+      reject(err);
+    });
+
     proc.on('close', (code) => {
+      clearTimeout(timer);
       if (code !== 0 || !stdout.trim()) {
         return reject(new Error(`YouTube Transcript not found: ${stderr}`));
       }

@@ -36,6 +36,42 @@ export function getFFprobePath(): string {
   return 'ffprobe';
 }
 
+export function getPythonPath(): string {
+  if (process.env.PYTHON_PATH && fs.existsSync(process.env.PYTHON_PATH)) {
+    return process.env.PYTHON_PATH;
+  }
+  if (fs.existsSync('/usr/bin/python3')) {
+    return '/usr/bin/python3';
+  }
+  if (fs.existsSync('/usr/local/bin/python3')) {
+    return '/usr/local/bin/python3';
+  }
+  if (fs.existsSync('/opt/homebrew/bin/python3')) {
+    return '/opt/homebrew/bin/python3';
+  }
+  if (fs.existsSync('/opt/anaconda3/bin/python3')) {
+    return '/opt/anaconda3/bin/python3';
+  }
+  return 'python3';
+}
+
+export function getYtDlpPath(): string {
+  if (process.env.YTDLP_PATH && fs.existsSync(process.env.YTDLP_PATH)) {
+    return process.env.YTDLP_PATH;
+  }
+  if (fs.existsSync('/usr/local/bin/yt-dlp')) {
+    return '/usr/local/bin/yt-dlp';
+  }
+  if (fs.existsSync('/usr/bin/yt-dlp')) {
+    return '/usr/bin/yt-dlp';
+  }
+  if (fs.existsSync('/opt/homebrew/bin/yt-dlp')) {
+    return '/opt/homebrew/bin/yt-dlp';
+  }
+  return 'yt-dlp';
+}
+
+
 let isVideotoolboxSupported: boolean | null = null;
 export function canUseVideotoolbox(): boolean {
   if (isVideotoolboxSupported !== null) return isVideotoolboxSupported;
