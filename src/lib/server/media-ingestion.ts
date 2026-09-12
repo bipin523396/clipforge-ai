@@ -9,7 +9,7 @@ import { probeMediaFile, ProbedMediaResult, getFFmpegPath, getFFprobePath, getPy
 import os from 'os';
 
 export function getYouTubeCookiesPath(): string | null {
-  if (process.env.YOUTUBE_COOKIES && process.env.YOUTUBE_COOKIES.trim().length > 10) {
+  if (process.env.YOUTUBE_COOKIES && process.env.YOUTUBE_COOKIES.trim().length > 50) {
     const cookiePath = path.join(os.tmpdir(), 'yt-cookies.txt');
     try {
       let content = process.env.YOUTUBE_COOKIES.trim();
@@ -27,7 +27,13 @@ export function getYouTubeCookiesPath(): string | null {
     path.join(os.tmpdir(), 'yt-cookies.txt'),
   ];
   for (const cand of localCandidates) {
-    if (fs.existsSync(cand)) return cand;
+    if (fs.existsSync(cand)) {
+      try {
+        const text = fs.readFileSync(cand, 'utf-8');
+        const lines = text.split('\n').filter((l) => l.trim() && !l.startsWith('#'));
+        if (lines.length >= 10) return cand;
+      } catch {}
+    }
   }
 
   return null;
@@ -54,6 +60,30 @@ export function isYouTubeUrl(url: string): boolean {
 }
 
 export async function extractMediaMetadata(sourceUrl: string): Promise<VideoMetadata> {
+  // 0. If it's a local file on disk (direct upload)
+  if (!isYouTubeUrl(sourceUrl) && fs.existsSync(sourceUrl)) {
+    try {
+      const probed = await probeMediaFile(sourceUrl);
+      const filename = path.basename(sourceUrl);
+      const cleanTitle = filename.replace(/^upl-[0-9]+-/, '').replace(/\.[^/.]+$/, '');
+      return {
+        id: `upload-${Date.now()}`,
+        title: cleanTitle || 'Uploaded Video',
+        durationSec: probed.durationSec || 60,
+        width: probed.width || 1920,
+        height: probed.height || 1080,
+        fps: probed.fps || 30,
+        uploader: 'Uploaded File',
+        filesizeBytes: probed.fileSizeBytes || fs.statSync(sourceUrl).size,
+        thumbnailUrl: 'https://images.unsplash.com/photo-1556761175-5973dc0f32e7?w=800',
+        hasVideo: probed.hasVideo,
+        hasAudio: probed.hasAudio,
+      };
+    } catch (localErr: any) {
+      console.warn('[Local video probe warning]:', localErr.message);
+    }
+  }
+
   // 1. If it's a YouTube URL, fetch instant metadata from YouTube's public oEmbed API
   let oembedData: any = null;
   if (isYouTubeUrl(sourceUrl)) {
@@ -209,14 +239,22 @@ export async function downloadAndVerifyMedia(
 
   // Step 1: Acquire source video
   if (!isYouTubeUrl(sourceUrl)) {
-    // Direct HTTP media stream download (e.g. Supabase, S3, or direct uploaded MP4)
-    onProgress?.(15, 'Acquiring source video from cloud storage...');
-    const res = await fetch(sourceUrl);
-    if (!res.ok) {
-      throw new Error(`Failed to download media file: HTTP ${res.status}`);
+    if (fs.existsSync(sourceUrl)) {
+      // Direct local file on server/container disk (direct uploaded MP4/MOV)
+      onProgress?.(15, 'Loading uploaded video from local storage disk...');
+      fs.copyFileSync(sourceUrl, videoOutPath);
+    } else if (sourceUrl.startsWith('http://') || sourceUrl.startsWith('https://')) {
+      // Direct HTTP media stream download (e.g. Supabase, S3, or direct uploaded MP4)
+      onProgress?.(15, 'Acquiring source video from cloud storage...');
+      const res = await fetch(sourceUrl);
+      if (!res.ok) {
+        throw new Error(`Failed to download media file: HTTP ${res.status}`);
+      }
+      const arrayBuffer = await res.arrayBuffer();
+      fs.writeFileSync(videoOutPath, Buffer.from(arrayBuffer));
+    } else {
+      throw new Error(`Media source file not found at path: ${sourceUrl}`);
     }
-    const arrayBuffer = await res.arrayBuffer();
-    fs.writeFileSync(videoOutPath, Buffer.from(arrayBuffer));
   } else {
     onProgress?.(15, 'Acquiring authorized original media stream (720p/1080p)...');
 
@@ -288,22 +326,32 @@ export async function downloadAndVerifyMedia(
     }
 
     if (!ok) {
-      // Stage 3: Fallback with format tolerance (any video + any audio)
-      onProgress?.(25, 'Retrying with flexible stream format resolution...');
+      // Stage 3: Android player client fallback (bypasses datacenter bot challenges for format 18 / best)
+      onProgress?.(25, 'Retrying with mobile streaming client...');
+      ok = await tryDownload([
+        '--extractor-args',
+        'youtube:player_client=android',
+        '-f',
+        'best[height<=720]/18/best',
+      ], null);
+    }
+
+    if (!ok) {
+      // Stage 4: Fallback with format tolerance (any video + any audio)
+      onProgress?.(30, 'Retrying with flexible stream format resolution...');
       ok = await tryDownload([
         '-f',
         'bestvideo+bestaudio/best',
       ], null);
     }
 
-
     if (!ok) {
-      // Stage 3: Direct 720p/360p pre-muxed streams
-      onProgress?.(30, 'Retrying single stream container...');
+      // Stage 5: Direct 720p/360p pre-muxed streams
+      onProgress?.(35, 'Retrying single stream container...');
       ok = await tryDownload([
         '-f',
         'best[height<=720]/best',
-      ]);
+      ], null);
     }
 
     if (!ok) {
