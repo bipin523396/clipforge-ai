@@ -39,3 +39,11 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# generated media & jobs
+public/renders/*
+!public/renders/.gitkeep
+public/media/downloads/*
+!public/media/downloads/.gitkeep
+public/jobs/*
+!public/jobs/.gitkeep

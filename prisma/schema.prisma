@@ -1,0 +1,413 @@
+// ClipForge AI - Database Schema (Prisma)
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum Role {
+  OWNER
+  ADMIN
+  EDITOR
+  VIEWER
+}
+
+enum PlanTier {
+  STARTER
+  CREATOR
+  STUDIO
+}
+
+enum JobStatus {
+  QUEUED
+  PROCESSING
+  TRANSCRIBING
+  ANALYZING
+  SCORING
+  RENDERING
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+enum AspectRatio {
+  PORTRAIT_9_16
+  SQUARE_1_1
+  LANDSCAPE_16_9
+}
+
+enum IngestType {
+  FILE_UPLOAD
+  YOUTUBE_URL
+  CLOUD_STORAGE
+  LIVESTREAM_RECORDING
+  RTMP_LIVE_STREAM
+}
+
+enum CaptionStylePreset {
+  BOLD_CREATOR
+  MINIMAL
+  KARAOKE_GLOW
+  DOCUMENTARY
+  HIGH_CONTRAST
+  VIRAL_POP
+}
+
+model User {
+  id            String         @id @default(cuid())
+  email         String         @unique
+  name          String?
+  avatarUrl     String?
+  passwordHash  String?
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  memberships   Membership[]
+  activityLogs  ActivityLog[]
+  notifications Notification[]
+  apiKeys       APIKey[]
+}
+
+model Workspace {
+  id            String         @id @default(cuid())
+  name          String
+  slug          String         @unique
+  logoUrl       String?
+  creditsTotal  Int            @default(300)
+  creditsUsed   Int            @default(60)
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  memberships   Membership[]
+  subscription  Subscription?
+  creditLedger  CreditLedger[]
+  projects      Project[]
+  brandKits     BrandKit[]
+  integrations  Integration[]
+  liveSessions  LiveSession[]
+  activityLogs  ActivityLog[]
+  apiKeys       APIKey[]
+}
+
+model Membership {
+  id          String    @id @default(cuid())
+  role        Role      @default(EDITOR)
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  workspaceId String
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  createdAt   DateTime  @default(now())
+
+  @@unique([userId, workspaceId])
+}
+
+model Subscription {
+  id                   String    @id @default(cuid())
+  workspaceId          String    @unique
+  workspace            Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  stripeCustomerId     String?
+  stripeSubscriptionId String?
+  plan                 PlanTier  @default(CREATOR)
+  billingCycle         String    @default("monthly") // monthly | annual
+  status               String    @default("active")
+  currentPeriodStart   DateTime  @default(now())
+  currentPeriodEnd     DateTime
+  cancelAtPeriodEnd    Boolean   @default(false)
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+}
+
+model CreditLedger {
+  id          String    @id @default(cuid())
+  workspaceId String
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  amount      Int       // positive for credit grant, negative for usage
+  balance     Int
+  description String
+  referenceId String?   // e.g. projectId or exportJobId
+  createdAt   DateTime  @default(now())
+}
+
+model Project {
+  id             String          @id @default(cuid())
+  workspaceId    String
+  workspace      Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  title          String
+  description    String?
+  contentType    String          @default("podcast") // podcast, gaming, interview, education, music, other
+  stylePreset    String          @default("energetic") // energetic, clean, cinematic, educational, minimal
+  preferredLang  String          @default("en")
+  targetDuration String          @default("30-60") // 15-30, 30-60, 60-90, custom
+  status         JobStatus       @default(QUEUED)
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  videoAsset     VideoAsset?
+  transcript     Transcript?
+  clips          Clip[]
+  processingJobs ProcessingJob[]
+}
+
+model VideoAsset {
+  id           String     @id @default(cuid())
+  projectId    String     @unique
+  project      Project    @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  ingestType   IngestType @default(FILE_UPLOAD)
+  sourceUrl    String
+  storageKey   String?
+  originalName String
+  mimeType     String     @default("video/mp4")
+  fileSizeBytes BigInt    @default(0)
+  durationSec  Float      @default(0)
+  width        Int        @default(1920)
+  height       Int        @default(1080)
+  fps          Float      @default(30)
+  audioCodec   String?
+  videoCodec   String?
+  thumbnailUrl String?
+  waveformUrl  String?
+  createdAt    DateTime   @default(now())
+}
+
+model ProcessingJob {
+  id           String    @id @default(cuid())
+  projectId    String
+  project      Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  jobType      String    // AUDIO_EXTRACT, TRANSCRIBE, HIGHLIGHT_DETECT, REFRAME, RENDER
+  status       JobStatus @default(QUEUED)
+  progress     Int       @default(0)
+  stage        String    @default("Initializing")
+  errorMessage String?
+  startedAt    DateTime?
+  finishedAt   DateTime?
+  retryCount   Int       @default(0)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+}
+
+model Transcript {
+  id          String              @id @default(cuid())
+  projectId   String              @unique
+  project     Project             @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  language    String              @default("en")
+  confidence  Float               @default(0.98)
+  fullText    String
+  segments    TranscriptSegment[]
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+}
+
+model TranscriptSegment {
+  id           String     @id @default(cuid())
+  transcriptId String
+  transcript   Transcript @relation(fields: [transcriptId], references: [id], onDelete: Cascade)
+  speaker      String     @default("Speaker 1")
+  startSec     Float
+  endSec       Float
+  text         String
+  sentiment    String?    // positive, neutral, impactful, question
+  energyScore  Float      @default(0.75)
+  wordsJson    String     // JSON array of [{word, startSec, endSec, score}]
+}
+
+model Clip {
+  id             String          @id @default(cuid())
+  projectId      String
+  project        Project         @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  title          String
+  hookStatement  String?
+  startSec       Float
+  endSec         Float
+  durationSec    Float
+  aspectRatio    AspectRatio     @default(PORTRAIT_9_16)
+  highlightScore Float           @default(85)
+  status         String          @default("ready") // ready, rendering, exported
+  thumbnailUrl   String?
+  previewVideoUrl String?
+  tags           String          @default("[]") // JSON string array of topics
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  clipScore      ClipScore?
+  versions       ClipVersion[]
+  captionTracks  CaptionTrack[]
+  exportJobs     ExportJob[]
+}
+
+model ClipScore {
+  id                String   @id @default(cuid())
+  clipId            String   @unique
+  clip              Clip     @relation(fields: [clipId], references: [id], onDelete: Cascade)
+  overallScore      Float    @default(88)
+  hookStrength      Float    @default(92)
+  emotionalEnergy   Float    @default(84)
+  clarityScore      Float    @default(90)
+  standaloneContext Float    @default(86)
+  pacingScore       Float    @default(89)
+  visualInterest    Float    @default(82)
+  explanationText   String   @default("Compelling opening hook with rapid thematic resolution and high speech energy.")
+}
+
+model ClipVersion {
+  id             String      @id @default(cuid())
+  clipId         String
+  clip           Clip        @relation(fields: [clipId], references: [id], onDelete: Cascade)
+  versionNum     Int         @default(1)
+  aspectRatio    AspectRatio @default(PORTRAIT_9_16)
+  cropSettings   String      // JSON: { x, y, scale, smartTrack: true }
+  overlaySettings String     // JSON: { titleOverlay, progressBar, cta, logoWatermark }
+  createdAt      DateTime    @default(now())
+}
+
+model CaptionTrack {
+  id             String             @id @default(cuid())
+  clipId         String
+  clip           Clip               @relation(fields: [clipId], references: [id], onDelete: Cascade)
+  language       String             @default("en")
+  preset         CaptionStylePreset @default(BOLD_CREATOR)
+  fontFamily     String             @default("Inter")
+  fontSize       Int                @default(48)
+  textColor      String             @default("#FFFFFF")
+  highlightColor String             @default("#22D3EE")
+  strokeColor    String             @default("#000000")
+  backgroundColor String            @default("transparent")
+  positionY      Int                @default(75) // percentage from top
+  wordAnimation  Boolean            @default(true)
+  autoEmojis     Boolean            @default(true)
+  segments       CaptionSegment[]
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+}
+
+model CaptionSegment {
+  id             String       @id @default(cuid())
+  captionTrackId String
+  captionTrack   CaptionTrack @relation(fields: [captionTrackId], references: [id], onDelete: Cascade)
+  startSec       Float
+  endSec         Float
+  text           String
+  wordsJson      String       // JSON: [{word: string, startSec: number, endSec: number, highlight?: boolean}]
+}
+
+model BrandKit {
+  id              String          @id @default(cuid())
+  workspaceId     String
+  workspace       Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  name            String          @default("Default Brand")
+  logoUrl         String?
+  primaryColor    String          @default("#8B5CF6")
+  secondaryColor  String          @default("#22D3EE")
+  textColor       String          @default("#FFFFFF")
+  backgroundColor String          @default("#09090B")
+  fontFamily      String          @default("Inter")
+  watermarkPos    String          @default("top-right") // top-left, top-right, bottom-left, bottom-right
+  defaultCtaText  String          @default("Follow for more")
+  captionPreset   CaptionStylePreset @default(BOLD_CREATOR)
+  introVideoUrl   String?
+  outroVideoUrl   String?
+  templates       BrandTemplate[]
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+}
+
+model BrandTemplate {
+  id           String    @id @default(cuid())
+  brandKitId   String
+  brandKit     BrandKit  @relation(fields: [brandKitId], references: [id], onDelete: Cascade)
+  name         String
+  aspectRatio  AspectRatio @default(PORTRAIT_9_16)
+  layoutConfig String    // JSON config
+  createdAt    DateTime  @default(now())
+}
+
+model ExportJob {
+  id            String    @id @default(cuid())
+  clipId        String
+  clip          Clip      @relation(fields: [clipId], references: [id], onDelete: Cascade)
+  resolution    String    @default("1080p") // 720p, 1080p, 4k
+  fps           Int       @default(30)
+  format        String    @default("mp4")
+  status        JobStatus @default(QUEUED)
+  progress      Int       @default(0)
+  renderedUrl   String?
+  srtUrl        String?
+  vttUrl        String?
+  targetPlatform String?  // TIKTOK, INSTAGRAM, YOUTUBE_SHORTS, X, LINKEDIN
+  metaTitle     String?
+  metaCaption   String?
+  metaHashtags  String?   // JSON array
+  scheduledTime DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+}
+
+model Integration {
+  id             String    @id @default(cuid())
+  workspaceId    String
+  workspace      Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  platform       String    // YOUTUBE, TIKTOK, INSTAGRAM, X, LINKEDIN, GOOGLE_DRIVE, DROPBOX
+  accountName    String?
+  accessToken    String?
+  refreshToken   String?
+  expiresAt      DateTime?
+  status         String    @default("connected")
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+}
+
+model LiveSession {
+  id             String    @id @default(cuid())
+  workspaceId    String
+  workspace      Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  title          String
+  rtmpSourceUrl  String
+  streamKey      String?
+  status         String    @default("idle") // idle, live, ended
+  ingestBitrate  Int       @default(6500)
+  latencyMs      Int       @default(140)
+  durationSec    Int       @default(0)
+  minScoreThreshold Float  @default(80)
+  autoExport     Boolean   @default(false)
+  detectedMomentsCount Int @default(0)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+}
+
+model ActivityLog {
+  id          String    @id @default(cuid())
+  workspaceId String
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  userId      String?
+  user        User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
+  action      String    // PROJECT_CREATED, CLIP_EXPORTED, BRAND_UPDATED, MEMBER_INVITED
+  entityId    String?
+  entityType  String?
+  metadata    String?   // JSON
+  createdAt   DateTime  @default(now())
+}
+
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title     String
+  message   String
+  type      String   @default("info") // info, success, warning, error
+  read      Boolean  @default(false)
+  linkUrl   String?
+  createdAt DateTime @default(now())
+}
+
+model APIKey {
+  id          String    @id @default(cuid())
+  workspaceId String
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name        String
+  keyPrefix   String
+  hashedSecret String
+  scopes      String    @default("[\"projects:read\",\"projects:write\",\"clips:read\",\"clips:write\",\"exports:create\"]")
+  lastUsedAt  DateTime?
+  expiresAt   DateTime?
+  createdAt   DateTime  @default(now())
+}
