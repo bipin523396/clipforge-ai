@@ -78,8 +78,8 @@ export async function extractMediaMetadata(sourceUrl: string): Promise<VideoMeta
         '--skip-download',
         '--no-playlist',
         '--no-check-certificates',
-        '--extractor-args',
-        'youtube:player_client=android,web',
+        '--js-runtimes',
+        'node',
         sourceUrl,
       ];
 
@@ -222,40 +222,39 @@ export async function downloadAndVerifyMedia(
 
     const cookiePath = getYouTubeCookiesPath();
 
-    const tryDownload = async (playerClient: string, formatStr: string): Promise<boolean> => {
+    const tryDownload = async (customArgs: string[]): Promise<boolean> => {
       return new Promise<boolean>((resolve) => {
         const ytDlp = getYtDlpPath();
-        const args = [
+        const baseArgs = [
           '--no-playlist',
           '--no-part',
           '--no-check-certificates',
+          '--js-runtimes',
+          'node',
           '-N',
           '4',
           '--concurrent-fragments',
           '4',
           '--buffer-size',
           '16M',
-          '--extractor-args',
-          `youtube:player_client=${playerClient}`,
-          '-f',
-          formatStr,
           '--merge-output-format',
           'mp4',
           '-o',
           videoOutPath,
-          sourceUrl,
         ];
 
         if (cookiePath) {
-          args.unshift('--cookies', cookiePath);
+          baseArgs.push('--cookies', cookiePath);
         }
 
-        const proc = spawn(ytDlp, args);
+        const fullArgs = [...baseArgs, ...customArgs, sourceUrl];
+
+        const proc = spawn(ytDlp, fullArgs);
         let stderr = '';
         const timer = setTimeout(() => {
           try { proc.kill('SIGKILL'); } catch {}
           resolve(false);
-        }, 120000);
+        }, 180000);
 
         proc.stderr.on('data', (d) => { stderr += d.toString(); });
         proc.on('error', () => { clearTimeout(timer); resolve(false); });
@@ -264,23 +263,35 @@ export async function downloadAndVerifyMedia(
           if (code === 0 && fs.existsSync(videoOutPath) && fs.statSync(videoOutPath).size > 10000) {
             resolve(true);
           } else {
+            console.warn('[yt-dlp attempt failed]:', stderr.slice(-300));
             resolve(false);
           }
         });
       });
     };
 
-    // Stage 1: Try visionos / ios player client (bypasses most cloud restrictions)
-    let ok = await tryDownload('visionos,ios', '136+140/bestvideo[ext=mp4][height<=1080]+bestaudio[ext=m4a]/best[ext=mp4][height<=720]/best');
+    // Stage 1: Standard high-speed multi-format with node JS challenge solver (visionos auto-detect)
+    let ok = await tryDownload([
+      '-f',
+      'bestvideo[height<=1080]+bestaudio/best[height<=1080]/bestvideo+bestaudio/best',
+    ]);
+
     if (!ok) {
-      // Stage 2: Try mweb / tv
-      onProgress?.(25, 'Retrying with alternate mobile streaming client...');
-      ok = await tryDownload('mweb,tv', '18/22/best[height<=720]/best');
+      // Stage 2: Fallback with format tolerance (any video + any audio)
+      onProgress?.(25, 'Retrying with flexible stream format resolution...');
+      ok = await tryDownload([
+        '-f',
+        'bestvideo+bestaudio/best',
+      ]);
     }
+
     if (!ok) {
-      // Stage 3: Try standard android
-      onProgress?.(30, 'Retrying standard stream resolution...');
-      ok = await tryDownload('android', 'best[ext=mp4][height<=720]/best');
+      // Stage 3: Direct 720p/360p pre-muxed streams
+      onProgress?.(30, 'Retrying single stream container...');
+      ok = await tryDownload([
+        '-f',
+        'best[height<=720]/best',
+      ]);
     }
 
     if (!ok) {
