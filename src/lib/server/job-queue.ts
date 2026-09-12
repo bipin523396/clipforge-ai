@@ -91,6 +91,16 @@ export function persistJob(job: PipelineJob) {
   } catch (err) {
     console.warn('[Job Persistence Notice]:', err);
   }
+
+  // Backup job metadata asynchronously to Supabase Storage so it survives container restarts/redeployments
+  try {
+    uploadToSupabaseStorage(
+      'projects-data',
+      `jobs/${job.id}.json`,
+      Buffer.from(JSON.stringify(job, null, 2)),
+      'application/json'
+    ).catch(() => {});
+  } catch {}
 }
 
 export function getJob(jobId: string): PipelineJob | null {

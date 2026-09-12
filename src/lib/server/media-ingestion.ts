@@ -6,6 +6,33 @@ import path from 'path';
 import fs from 'fs';
 import { probeMediaFile, ProbedMediaResult, getFFmpegPath, getFFprobePath, getPythonPath, getYtDlpPath } from './media-probe';
 
+import os from 'os';
+
+export function getYouTubeCookiesPath(): string | null {
+  if (process.env.YOUTUBE_COOKIES && process.env.YOUTUBE_COOKIES.trim().length > 10) {
+    const cookiePath = path.join(os.tmpdir(), 'yt-cookies.txt');
+    try {
+      let content = process.env.YOUTUBE_COOKIES.trim();
+      if (content.startsWith('base64:')) {
+        content = Buffer.from(content.slice(7), 'base64').toString('utf-8');
+      }
+      fs.writeFileSync(cookiePath, content, 'utf-8');
+      return cookiePath;
+    } catch {}
+  }
+
+  const localCandidates = [
+    path.join(process.cwd(), 'cookies.txt'),
+    path.join(os.tmpdir(), 'cookies.txt'),
+    path.join(os.tmpdir(), 'yt-cookies.txt'),
+  ];
+  for (const cand of localCandidates) {
+    if (fs.existsSync(cand)) return cand;
+  }
+
+  return null;
+}
+
 export interface VideoMetadata {
   id: string;
   title: string;
@@ -180,55 +207,87 @@ export async function downloadAndVerifyMedia(
   const videoOutPath = path.join(outputDir, `${projectId}.mp4`);
   const audioOutPath = path.join(outputDir, `${projectId}.wav`);
 
-  onProgress?.(15, 'Acquiring authorized original media stream (1080p/720p)...');
+  // Step 1: Acquire source video
+  if (!isYouTubeUrl(sourceUrl)) {
+    // Direct HTTP media stream download (e.g. Supabase, S3, or direct uploaded MP4)
+    onProgress?.(15, 'Acquiring source video from cloud storage...');
+    const res = await fetch(sourceUrl);
+    if (!res.ok) {
+      throw new Error(`Failed to download media file: HTTP ${res.status}`);
+    }
+    const arrayBuffer = await res.arrayBuffer();
+    fs.writeFileSync(videoOutPath, Buffer.from(arrayBuffer));
+  } else {
+    onProgress?.(15, 'Acquiring authorized original media stream (720p/1080p)...');
 
-  // Step 1: Download authentic source video using yt-dlp with optimized format fallback
-  await new Promise<void>((resolve, reject) => {
-    const ytDlp = getYtDlpPath();
-    const args = [
-      '--no-playlist',
-      '--no-part',
-      '--no-check-certificates',
-      '-N',
-      '4',
-      '--concurrent-fragments',
-      '4',
-      '--buffer-size',
-      '16M',
-      '--extractor-args',
-      'youtube:player_client=android,web',
-      '-f',
-      'bestvideo[ext=mp4][height<=1080]+bestaudio[ext=m4a]/best[ext=mp4][height<=1080]/best',
-      '--merge-output-format',
-      'mp4',
-      '-o',
-      videoOutPath,
-      sourceUrl,
-    ];
+    const cookiePath = getYouTubeCookiesPath();
 
-    const proc = spawn(ytDlp, args);
-    let stderr = '';
-    const timer = setTimeout(() => {
-      try { proc.kill('SIGKILL'); } catch {}
-      reject(new Error('Media download timed out after 180 seconds'));
-    }, 180000);
+    const tryDownload = async (playerClient: string, formatStr: string): Promise<boolean> => {
+      return new Promise<boolean>((resolve) => {
+        const ytDlp = getYtDlpPath();
+        const args = [
+          '--no-playlist',
+          '--no-part',
+          '--no-check-certificates',
+          '-N',
+          '4',
+          '--concurrent-fragments',
+          '4',
+          '--buffer-size',
+          '16M',
+          '--extractor-args',
+          `youtube:player_client=${playerClient}`,
+          '-f',
+          formatStr,
+          '--merge-output-format',
+          'mp4',
+          '-o',
+          videoOutPath,
+          sourceUrl,
+        ];
 
-    proc.stderr.on('data', (d) => {
-      stderr += d.toString();
-    });
-    proc.on('error', (err) => {
-      clearTimeout(timer);
-      reject(err);
-    });
-    proc.on('close', (code) => {
-      clearTimeout(timer);
-      if (code === 0 && fs.existsSync(videoOutPath) && fs.statSync(videoOutPath).size > 10000) {
-        resolve();
-      } else {
-        reject(new Error(`Failed to download source media: ${stderr.slice(-300)}`));
-      }
-    });
-  });
+        if (cookiePath) {
+          args.unshift('--cookies', cookiePath);
+        }
+
+        const proc = spawn(ytDlp, args);
+        let stderr = '';
+        const timer = setTimeout(() => {
+          try { proc.kill('SIGKILL'); } catch {}
+          resolve(false);
+        }, 120000);
+
+        proc.stderr.on('data', (d) => { stderr += d.toString(); });
+        proc.on('error', () => { clearTimeout(timer); resolve(false); });
+        proc.on('close', (code) => {
+          clearTimeout(timer);
+          if (code === 0 && fs.existsSync(videoOutPath) && fs.statSync(videoOutPath).size > 10000) {
+            resolve(true);
+          } else {
+            resolve(false);
+          }
+        });
+      });
+    };
+
+    // Stage 1: Try visionos / ios player client (bypasses most cloud restrictions)
+    let ok = await tryDownload('visionos,ios', '136+140/bestvideo[ext=mp4][height<=1080]+bestaudio[ext=m4a]/best[ext=mp4][height<=720]/best');
+    if (!ok) {
+      // Stage 2: Try mweb / tv
+      onProgress?.(25, 'Retrying with alternate mobile streaming client...');
+      ok = await tryDownload('mweb,tv', '18/22/best[height<=720]/best');
+    }
+    if (!ok) {
+      // Stage 3: Try standard android
+      onProgress?.(30, 'Retrying standard stream resolution...');
+      ok = await tryDownload('android', 'best[ext=mp4][height<=720]/best');
+    }
+
+    if (!ok) {
+      throw new Error('YouTube restricted download on cloud server (bot/cookies required). Please set YOUTUBE_COOKIES in Render Environment Variables, or upload your video file directly using the Upload tab.');
+    }
+  }
+
 
   // Step 2: STRICT VERIFICATION OF SOURCE VIDEO VIA FFPROBE
   onProgress?.(40, 'Running ffprobe source stream verification...');

@@ -106,13 +106,36 @@ export const CreateProjectModal: React.FC = () => {
         timelineRange = [parseTimeToSec(timelineStart), parseTimeToSec(timelineEnd)];
       }
 
-      const allYoutubeUrls = inputType === 'youtube' ? [youtubeUrl, ...extraYoutubeUrls.filter(Boolean)] : [];
+      let resolvedMediaUrl = youtubeUrl;
+
+      if (inputType === 'upload') {
+        if (!selectedFile) {
+          throw new Error('Please select a video file to upload');
+        }
+        toast('Uploading Video...', 'Uploading file to cloud storage for processing...', 'info');
+        const uploadFormData = new FormData();
+        uploadFormData.append('file', selectedFile);
+        const uploadRes = await fetch('/api/pipeline/upload', {
+          method: 'POST',
+          body: uploadFormData,
+        });
+        if (!uploadRes.ok) {
+          throw new Error('Failed to upload video file to cloud storage');
+        }
+        const uploadData = await uploadRes.json();
+        if (!uploadData.success || !uploadData.url) {
+          throw new Error(uploadData.error || 'Video upload failed');
+        }
+        resolvedMediaUrl = uploadData.url;
+      }
+
+      const allYoutubeUrls = inputType === 'youtube' ? [resolvedMediaUrl, ...extraYoutubeUrls.filter(Boolean)] : [resolvedMediaUrl];
 
       const response = await fetch('/api/pipeline/discover', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          youtubeUrl: inputType === 'youtube' ? youtubeUrl : selectedFile ? selectedFile.name : 'local-file.mp4',
+          youtubeUrl: resolvedMediaUrl,
           youtubeUrls: allYoutubeUrls,
           songUrl: songUrl.trim() || undefined,
           songSyncMode: Boolean(songUrl.trim() && songSyncMode),
