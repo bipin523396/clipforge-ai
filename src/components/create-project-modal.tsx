@@ -23,6 +23,7 @@ import {
   Trash2,
   Volume2,
   VolumeX,
+  AlertCircle,
 } from 'lucide-react';
 import { DiscoveryMode } from '@/types';
 import { YouTubeProIcon } from '@/components/brand-logo';
@@ -31,7 +32,7 @@ export const CreateProjectModal: React.FC = () => {
   const router = useRouter();
   const { isCreateModalOpen, setIsCreateModalOpen, toast } = useApp();
 
-  const [inputType, setInputType] = useState<'youtube' | 'upload' | 'cloud' | 'stream'>('youtube');
+  const [inputType, setInputType] = useState<'youtube' | 'upload' | 'cloud' | 'stream'>('upload');
   const [projectTitle, setProjectTitle] = useState('Why 90% of Tech Startups Fail Early');
   const [youtubeUrl, setYoutubeUrl] = useState('https://www.youtube.com/watch?v=dQw4w9WgXcQ');
   const [extraYoutubeUrls, setExtraYoutubeUrls] = useState<string[]>([]);
@@ -226,8 +227,8 @@ export const CreateProjectModal: React.FC = () => {
           {/* Input Method Selector Tabs */}
           <div className="grid grid-cols-4 gap-2">
             {[
+              { id: 'upload', label: 'Upload File', icon: UploadCloud, badge: 'Recommended' },
               { id: 'youtube', label: 'YouTube URL', icon: YouTubeProIcon, isCustomIcon: true },
-              { id: 'upload', label: 'Upload File', icon: UploadCloud },
               { id: 'cloud', label: 'Cloud Storage', icon: HardDrive },
               { id: 'stream', label: 'Live Stream', icon: Radio },
             ].map((tab) => {
@@ -238,12 +239,17 @@ export const CreateProjectModal: React.FC = () => {
                   key={tab.id}
                   type="button"
                   onClick={() => setInputType(tab.id as any)}
-                  className={`flex flex-col items-center justify-center p-3 rounded-xl border text-xs font-semibold transition-all ${
+                  className={`relative flex flex-col items-center justify-center p-3 rounded-xl border text-xs font-semibold transition-all ${
                     isSelected
                       ? 'border-violet-500 bg-violet-500/20 text-white shadow-md shadow-violet-500/10'
                       : 'border-zinc-800 bg-zinc-950 text-zinc-400 hover:text-white'
                   }`}
                 >
+                  {tab.badge && (
+                    <span className="absolute -top-2 px-1.5 py-0.2 rounded-full text-[9px] font-bold bg-emerald-500 text-black font-mono shadow-sm">
+                      {tab.badge}
+                    </span>
+                  )}
                   {tab.isCustomIcon ? (
                     <div className="mb-1">
                       <YouTubeProIcon className="w-5 h-5" />
@@ -260,6 +266,21 @@ export const CreateProjectModal: React.FC = () => {
           {/* YouTube URL Input & Multi-Link Processing */}
           {inputType === 'youtube' && (
             <div className="space-y-3.5">
+              {/* Cloud Server YouTube Notice */}
+              <div className="rounded-xl border border-amber-500/40 bg-amber-500/10 p-3 flex items-start gap-2.5">
+                <AlertCircle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                <div className="text-xs text-amber-200/90 leading-relaxed">
+                  <strong className="text-amber-300">Cloud Datacenter Notice:</strong> YouTube blocks automated video downloads from server IP addresses (Render / AWS / GCP). For 100% instant reliability with zero restrictions, switch to the{' '}
+                  <button
+                    type="button"
+                    onClick={() => setInputType('upload')}
+                    className="font-bold underline text-amber-300 hover:text-white"
+                  >
+                    Upload File tab
+                  </button>{' '}
+                  to upload your video (MP4/MOV up to 2GB)!
+                </div>
+              </div>
               {/* Multi-Link Workflow Explanation Banner */}
               <div className="rounded-xl border border-violet-500/40 bg-gradient-to-r from-violet-950/50 via-indigo-950/30 to-zinc-950 p-3.5 space-y-2">
                 <div className="flex items-center justify-between">

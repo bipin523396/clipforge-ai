@@ -30,6 +30,7 @@ import {
   Play,
   Globe,
   Plus,
+  UploadCloud,
 } from 'lucide-react';
 
 export default function MomentDiscoveryPage({
@@ -42,7 +43,7 @@ export default function MomentDiscoveryPage({
   const searchParams = useSearchParams();
   const jobId = searchParams.get('jobId') || `disc-job-${projectId}`;
   const router = useRouter();
-  const { toast } = useApp();
+  const { toast, setIsCreateModalOpen } = useApp();
 
   const [job, setJob] = useState<PipelineJob | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -231,12 +232,39 @@ export default function MomentDiscoveryPage({
 
         {/* Error Notification */}
         {error && (
-          <div className="rounded-3xl border border-rose-500/40 bg-rose-500/10 p-6 space-y-2 animate-in fade-in">
+          <div className="rounded-3xl border border-rose-500/40 bg-rose-500/10 p-6 space-y-4 animate-in fade-in">
             <div className="flex items-center gap-2 text-rose-400 font-bold text-sm">
               <AlertCircle className="w-5 h-5" />
-              <span>Discovery Pipeline Error</span>
+              <span>Discovery Pipeline Notice</span>
             </div>
             <p className="text-xs text-zinc-300 font-mono">{error}</p>
+
+            <div className="p-4 rounded-2xl border border-amber-500/30 bg-amber-500/10 space-y-2">
+              <p className="text-xs font-bold text-amber-300">💡 Why did this happen?</p>
+              <p className="text-xs text-zinc-300 leading-relaxed">
+                YouTube blocks cloud datacenter servers (Render / AWS / GCP) from downloading video streams without manual bot checks.
+                The fastest, 100% reliable way is to upload your video file (MP4/MOV up to 2GB) directly using the <strong>Upload File</strong> tab.
+              </p>
+            </div>
+
+            <div className="pt-2 flex flex-wrap gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setIsCreateModalOpen(true);
+                }}
+                className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-violet-600 to-indigo-600 text-xs font-bold text-white hover:opacity-90 shadow-lg shadow-violet-500/20 flex items-center gap-2"
+              >
+                <UploadCloud className="w-4 h-4" />
+                <span>Upload Video File Directly (Recommended)</span>
+              </button>
+              <Link
+                href="/dashboard"
+                className="px-4 py-2.5 rounded-xl bg-zinc-800 text-xs font-bold text-white hover:bg-zinc-700 flex items-center"
+              >
+                Return to Dashboard
+              </Link>
+            </div>
           </div>
         )}
 
