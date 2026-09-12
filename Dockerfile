@@ -49,6 +49,7 @@ EXPOSE 3000
 COPY --from=builder /app/public ./public
 COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/.next/static ./.next/static
+COPY --from=builder /app/cookies.txt* ./
 
 # Create scratch directories with write permissions
 RUN mkdir -p /tmp/clipforge-jobs /tmp/clipforge-renders /tmp/clipforge-downloads \

@@ -222,7 +222,7 @@ export async function downloadAndVerifyMedia(
 
     const cookiePath = getYouTubeCookiesPath();
 
-    const tryDownload = async (customArgs: string[]): Promise<boolean> => {
+    const tryDownload = async (customArgs: string[], useCookie: string | null = null): Promise<boolean> => {
       return new Promise<boolean>((resolve) => {
         const ytDlp = getYtDlpPath();
         const baseArgs = [
@@ -243,8 +243,8 @@ export async function downloadAndVerifyMedia(
           videoOutPath,
         ];
 
-        if (cookiePath) {
-          baseArgs.push('--cookies', cookiePath);
+        if (useCookie) {
+          baseArgs.push('--cookies', useCookie);
         }
 
         const fullArgs = [...baseArgs, ...customArgs, sourceUrl];
@@ -270,20 +270,32 @@ export async function downloadAndVerifyMedia(
       });
     };
 
-    // Stage 1: Standard high-speed multi-format with node JS challenge solver (visionos auto-detect)
-    let ok = await tryDownload([
-      '-f',
-      'bestvideo[height<=1080]+bestaudio/best[height<=1080]/bestvideo+bestaudio/best',
-    ]);
+    // Stage 1: Try with cookies if provided
+    let ok = false;
+    if (cookiePath) {
+      ok = await tryDownload([
+        '-f',
+        'bestvideo[height<=1080]+bestaudio/best[height<=1080]/bestvideo+bestaudio/best',
+      ], cookiePath);
+    }
+
+    // Stage 2: Standard high-speed multi-format with node JS challenge solver (unauthenticated visionos)
+    if (!ok) {
+      ok = await tryDownload([
+        '-f',
+        'bestvideo[height<=1080]+bestaudio/best[height<=1080]/bestvideo+bestaudio/best',
+      ], null);
+    }
 
     if (!ok) {
-      // Stage 2: Fallback with format tolerance (any video + any audio)
+      // Stage 3: Fallback with format tolerance (any video + any audio)
       onProgress?.(25, 'Retrying with flexible stream format resolution...');
       ok = await tryDownload([
         '-f',
         'bestvideo+bestaudio/best',
-      ]);
+      ], null);
     }
+
 
     if (!ok) {
       // Stage 3: Direct 720p/360p pre-muxed streams
