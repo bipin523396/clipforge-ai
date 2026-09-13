@@ -45,5 +45,7 @@ public/renders/*
 !public/renders/.gitkeep
 public/media/downloads/*
 !public/media/downloads/.gitkeep
+public/media/long-renders/*
+!public/media/long-renders/.gitkeep
 public/jobs/*
 !public/jobs/.gitkeep

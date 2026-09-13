@@ -32,6 +32,9 @@ import {
   Zap,
   RefreshCw,
   ExternalLink,
+  Volume2,
+  VolumeX,
+  Maximize,
 } from 'lucide-react';
 
 export default function LongVideoStudioPage({
@@ -54,9 +57,11 @@ export default function LongVideoStudioPage({
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [videoDuration, setVideoDuration] = useState(0);
-  const [activePlayerMode, setActivePlayerMode] = useState<'source' | 'rendered'>('source');
+  const [activePlayerMode, setActivePlayerMode] = useState<'source' | 'rendered'>('rendered');
+  const [isMuted, setIsMuted] = useState(false);
+  const hasAutoSelected = useRef(false);
 
-  const chatEndRef = useRef<HTMLDivElement | null>(null);
+  const chatContainerRef = useRef<HTMLDivElement | null>(null);
 
   const fetchProject = async () => {
     try {
@@ -64,8 +69,13 @@ export default function LongVideoStudioPage({
       const data = await res.json();
       if (data.success && data.project) {
         setProject(data.project);
-        if (data.project.renderedOutput && activePlayerMode === 'source' && data.project.status === 'completed') {
-          // If master render is ready, can default to rendered view
+        if (!hasAutoSelected.current) {
+          if (data.project.renderedOutput) {
+            setActivePlayerMode('rendered');
+          } else {
+            setActivePlayerMode('source');
+          }
+          hasAutoSelected.current = true;
         }
       } else {
         setError(data.error || 'Project not found');
@@ -82,8 +92,10 @@ export default function LongVideoStudioPage({
   }, [projectId]);
 
   useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [project?.chatHistory]);
+    if (chatContainerRef.current) {
+      chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
+    }
+  }, [project?.chatHistory?.length]);
 
   const handleTimeUpdate = () => {
     if (videoRef.current) {
@@ -113,6 +125,21 @@ export default function LongVideoStudioPage({
       } else {
         videoRef.current.play().catch(() => {});
         setIsPlaying(true);
+      }
+    }
+  };
+
+  const toggleMute = () => {
+    if (videoRef.current) {
+      videoRef.current.muted = !videoRef.current.muted;
+      setIsMuted(videoRef.current.muted);
+    }
+  };
+
+  const handleFullscreen = () => {
+    if (videoRef.current) {
+      if (videoRef.current.requestFullscreen) {
+        videoRef.current.requestFullscreen();
       }
     }
   };
@@ -189,8 +216,8 @@ export default function LongVideoStudioPage({
   const activePlan = project?.activePlan;
 
   const currentVideoSrc = activePlayerMode === 'rendered' && project?.renderedOutput
-    ? project.renderedOutput.videoPath
-    : (project?.localSourcePath ? `/api/projects/${projectId}/clips/src-${projectId}/download` : '');
+    ? `/api/long-video/projects/${projectId}/stream?mode=rendered`
+    : `/api/long-video/projects/${projectId}/stream?mode=source`;
 
   return (
     <AppShell>
@@ -296,10 +323,11 @@ export default function LongVideoStudioPage({
               <div className="relative aspect-video rounded-2xl bg-black overflow-hidden border border-zinc-900 group">
                 <video
                   ref={videoRef}
+                  key={currentVideoSrc}
                   src={currentVideoSrc}
                   onTimeUpdate={handleTimeUpdate}
                   onLoadedMetadata={handleLoadedMetadata}
-                  controls={false}
+                  playsInline
                   className="w-full h-full object-contain"
                   poster={project?.thumbnailUrl}
                 />
@@ -316,14 +344,15 @@ export default function LongVideoStudioPage({
                 </button>
               </div>
 
-              {/* Player Scrubber Controls */}
+              {/* Player Scrubber & Controls */}
               <div className="flex items-center gap-3 px-2 pt-1">
                 <button
                   type="button"
                   onClick={togglePlay}
-                  className="p-2 rounded-xl bg-zinc-900 text-zinc-300 hover:text-white border border-zinc-800"
+                  className="p-2 rounded-xl bg-zinc-900 text-zinc-300 hover:text-white hover:bg-zinc-800 border border-zinc-800 transition-colors"
+                  title={isPlaying ? 'Pause' : 'Play'}
                 >
-                  {isPlaying ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
+                  {isPlaying ? <Pause className="w-4 h-4 fill-current" /> : <Play className="w-4 h-4 fill-current" />}
                 </button>
                 <input
                   type="range"
@@ -334,6 +363,22 @@ export default function LongVideoStudioPage({
                   onChange={(e) => seekTo(parseFloat(e.target.value))}
                   className="flex-1 accent-cyan-400 h-1.5 bg-zinc-800 rounded-lg cursor-pointer"
                 />
+                <button
+                  type="button"
+                  onClick={toggleMute}
+                  className="p-2 rounded-xl bg-zinc-900 text-zinc-300 hover:text-white hover:bg-zinc-800 border border-zinc-800 transition-colors"
+                  title={isMuted ? 'Unmute' : 'Mute'}
+                >
+                  {isMuted ? <VolumeX className="w-4 h-4 text-red-400" /> : <Volume2 className="w-4 h-4 text-zinc-300" />}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleFullscreen}
+                  className="p-2 rounded-xl bg-zinc-900 text-zinc-300 hover:text-white hover:bg-zinc-800 border border-zinc-800 transition-colors"
+                  title="Fullscreen"
+                >
+                  <Maximize className="w-4 h-4" />
+                </button>
               </div>
             </div>
 
@@ -550,10 +595,11 @@ export default function LongVideoStudioPage({
                     onClick={() => {
                       setActivePlayerMode('rendered');
                       seekTo(0);
+                      videoRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
                     }}
-                    className="px-4 py-2.5 rounded-xl bg-zinc-900 border border-zinc-700 text-xs font-bold text-white hover:bg-zinc-800 flex items-center gap-2"
+                    className="px-4 py-2.5 rounded-xl bg-zinc-900 border border-zinc-700 text-xs font-bold text-white hover:bg-zinc-800 flex items-center gap-2 transition-colors cursor-pointer"
                   >
-                    <Play className="w-4 h-4 text-emerald-400" />
+                    <Play className="w-4 h-4 text-emerald-400 fill-current" />
                     <span>Preview in Canvas Player</span>
                   </button>
                 </div>
@@ -603,7 +649,7 @@ export default function LongVideoStudioPage({
             </div>
 
             {/* Chat Messages List */}
-            <div className="flex-1 overflow-y-auto p-4 space-y-4">
+            <div ref={chatContainerRef} className="flex-1 overflow-y-auto p-4 space-y-4">
               {project?.chatHistory.map((msg) => {
                 const isUser = msg.role === 'user';
 
@@ -652,7 +698,6 @@ export default function LongVideoStudioPage({
                   </div>
                 </div>
               )}
-              <div ref={chatEndRef} />
             </div>
 
             {/* Chat Input Bar */}
