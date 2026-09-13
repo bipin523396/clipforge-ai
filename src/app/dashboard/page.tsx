@@ -82,13 +82,21 @@ export default function DashboardPage() {
             </p>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-3">
+            <Link
+              href="/long-video"
+              className="inline-flex items-center gap-2 rounded-2xl bg-zinc-900 border border-cyan-500/40 hover:border-cyan-400 px-4 py-3 text-xs sm:text-sm font-bold text-white shadow-lg hover:bg-zinc-800 transition-all group"
+            >
+              <Film className="w-4 h-4 text-cyan-400 group-hover:scale-110 transition-transform" />
+              <span>Long Video AI Editor</span>
+              <span className="text-[9px] font-mono px-1.5 py-0.5 rounded-full bg-cyan-500/20 text-cyan-300 font-bold">NEW</span>
+            </Link>
             <button
               onClick={() => setIsCreateModalOpen(true)}
               className="inline-flex items-center gap-2 rounded-2xl bg-gradient-to-r from-violet-600 via-indigo-600 to-cyan-500 px-5 py-3 text-xs sm:text-sm font-bold text-white shadow-xl shadow-violet-500/25 hover:opacity-95 active:scale-95 transition-all"
             >
               <Plus className="w-4 h-4" />
-              <span>Create New Project</span>
+              <span>Create Shorts Project</span>
             </button>
           </div>
         </div>

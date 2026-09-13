@@ -14,6 +14,7 @@ import {
   Sparkles,
   Layers,
   HelpCircle,
+  Film,
 } from 'lucide-react';
 
 export const AppSidebar: React.FC = () => {
@@ -21,7 +22,8 @@ export const AppSidebar: React.FC = () => {
 
   const navigation = [
     { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
-    { name: 'Projects', href: '/projects', icon: FolderKanban },
+    { name: 'Projects (Shorts)', href: '/projects', icon: FolderKanban },
+    { name: 'Long Video AI Editor', href: '/long-video', icon: Film, badge: 'NEW' },
     { name: 'Brand Kits', href: '/brand-kits', icon: Palette },
     { name: 'Live Studio', href: '/live', icon: Radio, badge: 'Live' },
     { name: 'Analytics', href: '/analytics', icon: BarChart3 },
